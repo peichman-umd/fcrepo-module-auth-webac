@@ -25,11 +25,12 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.ClientProtocolException;
-import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -122,7 +123,7 @@ public class WebACRecipesIT {
      */
     private HttpResponse ingestTurtleResource(final String credentials, final String path, final String requestURI)
             throws ClientProtocolException, IOException {
-        final HttpPost postRequest = new HttpPost(requestURI);
+        final HttpPut postRequest = new HttpPut(requestURI);
 
         final String message = "POST to " + requestURI + " to create " + path;
         logger.debug(message);
@@ -141,9 +142,7 @@ public class WebACRecipesIT {
         // "java.lang.VerifyError: Bad type on operand stack"
         // see https://gist.github.com/peichman-umd/7f2eb8833ef8cd0cdfc1#gistcomment-1566271
         final HttpResponse response = client.execute(postRequest);
-        if (response.getStatusLine().getStatusCode() != HttpStatus.SC_CREATED) {
-            throw new IOException(message + " FAILED");
-        }
+        Assert.assertEquals(HttpStatus.SC_CREATED, response.getStatusLine().getStatusCode());
 
         return response;
     }
