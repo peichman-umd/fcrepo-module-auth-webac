@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.InputStreamEntity;
@@ -65,27 +66,86 @@ public class WebACRecipesIT {
 
     @Before
     public void setUp() throws ClientProtocolException, IOException {
-        // TODO: this should be factored out into a repeatable method to set up each scenario
-        final HttpPost postRequest = new HttpPost(serverAddress);
+        final String credentials = "username:password";
 
-        final String creds = "username:password";
+        logger.debug("setting up ACLs and authorization rules");
+
+        ingestAcl(credentials, "/acls/01/acl.ttl", "/acls/01/authorization.ttl");
+        ingestAcl(credentials, "/acls/02/acl.ttl", "/acls/02/authorization.ttl");
+        ingestAcl(credentials, "/acls/03/acl.ttl", "/acls/03/auth_open.ttl", "/acls/03/auth_restricted.ttl");
+        ingestAcl(credentials, "/acls/04/acl.ttl", "/acls/04/auth1.ttl", "/acls/04/auth2.ttl");
+        ingestAcl(credentials, "/acls/05/acl.ttl", "/acls/05/auth_open.ttl", "/acls/05/auth_restricted.ttl");
+
+        logger.debug("setup complete");
+    }
+
+    /**
+     * Convenience method to create an ACL with 0 or more authorization resources in the respository.
+     *
+     * @param credentials
+     * @param aclResourcePath
+     * @param authorizationResourcePaths
+     * @return URI of the created ACL
+     * @throws ClientProtocolException
+     * @throws IOException
+     */
+    private String ingestAcl(final String credentials, final String aclResourcePath,
+            final String... authorizationResourcePaths) throws ClientProtocolException, IOException {
+
+        // create the ACL
+        final HttpResponse aclResponse = ingestTurtleResource(credentials, aclResourcePath, serverAddress);
+        System.err.println(aclResponse.getStatusLine());
+
+        // get the URI to the newly created resource
+        final String aclURI = aclResponse.getFirstHeader("Location").getValue();
+
+        // add all the authorizations
+        for (final String authorizationResourcePath : authorizationResourcePaths) {
+            final HttpResponse authzResponse = ingestTurtleResource(credentials, authorizationResourcePath, aclURI);
+            System.err.println(authzResponse.getStatusLine());
+        }
+
+        return aclURI;
+    }
+
+    /**
+     * Convenience method to POST the contents of a Turtle file to the repository to create a new resource. Returns
+     * the HTTP response from that request. Throws an IOException if the server responds with anything other than a
+     * 201 Created response code.
+     *
+     * @param credentials
+     * @param path
+     * @param requestURI
+     * @return HTTP response to the create request.
+     * @throws ClientProtocolException
+     * @throws IOException
+     */
+    private HttpResponse ingestTurtleResource(final String credentials, final String path, final String requestURI)
+            throws ClientProtocolException, IOException {
+        final HttpPost postRequest = new HttpPost(requestURI);
+
+        final String message = "POST to " + requestURI + " to create " + path;
+        logger.debug(message);
+
         // in test configuration we don't need real passwords
-        final String encCreds = new String(Base64.encodeBase64(creds.getBytes()));
+        final String encCreds = new String(Base64.encodeBase64(credentials.getBytes()));
         final String basic = "Basic " + encCreds;
         postRequest.setHeader("Authorization", basic);
 
-        final InputStream acl = this.getClass().getResourceAsStream("/acls/01/acl.ttl");
-        final InputStreamEntity acl_entity = new InputStreamEntity(acl);
-        postRequest.setEntity(acl_entity);
+        final InputStream file = this.getClass().getResourceAsStream(path);
+        final InputStreamEntity fileEntity = new InputStreamEntity(file);
+        postRequest.setEntity(fileEntity);
         postRequest.setHeader("Content-Type", "text/turtle;charset=UTF-8");
 
         // XXX: this is currently failing in the test repository with a
         // "java.lang.VerifyError: Bad type on operand stack"
         // see https://gist.github.com/peichman-umd/7f2eb8833ef8cd0cdfc1#gistcomment-1566271
-        final HttpResponse res = client.execute(postRequest);
-        System.err.println(res.getStatusLine());
+        final HttpResponse response = client.execute(postRequest);
+        if (response.getStatusLine().getStatusCode() != HttpStatus.SC_CREATED) {
+            throw new IOException(message + " FAILED");
+        }
 
-        logger.debug("setup complete");
+        return response;
     }
 
     @Test
