@@ -56,11 +56,13 @@ import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFDataMgr;
 import org.fcrepo.auth.roles.common.AccessRolesProvider;
 import org.fcrepo.http.commons.session.SessionFactory;
+import org.fcrepo.kernel.api.FedoraSession;
 import org.fcrepo.kernel.api.RdfStream;
 import org.fcrepo.kernel.api.models.FedoraResource;
 import org.fcrepo.kernel.api.rdf.DefaultRdfStream;
 import org.fcrepo.kernel.api.services.NodeService;
 import org.fcrepo.kernel.modeshape.FedoraResourceImpl;
+import org.fcrepo.kernel.modeshape.FedoraSessionImpl;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -83,10 +85,13 @@ public class WebACRolesProviderTest {
     private Node mockNode, mockParentNode;
 
     @Mock
-    private Session mockSession;
+    private FedoraSessionImpl mockSession;
 
     @Mock
     private SessionFactory mockSessionFactory;
+
+    @Mock
+    private Session mockJcrSession;
 
     @Mock
     private NodeService mockNodeService;
@@ -108,9 +113,10 @@ public class WebACRolesProviderTest {
         setField(roleProvider, "nodeService", mockNodeService);
         setField(roleProvider, "sessionFactory", mockSessionFactory);
 
-        when(mockNodeService.find(eq(mockSession), any())).thenReturn(mockResource);
-        when(mockNode.getSession()).thenReturn(mockSession);
+        when(mockNodeService.find(any(FedoraSession.class), any())).thenReturn(mockResource);
+        when(mockNode.getSession()).thenReturn(mockJcrSession);
         when(mockSessionFactory.getInternalSession()).thenReturn(mockSession);
+        when(mockSession.getJcrSession()).thenReturn(mockJcrSession);
 
         when(mockResource.getNode()).thenReturn(mockNode);
         when(mockNode.getDepth()).thenReturn(0);

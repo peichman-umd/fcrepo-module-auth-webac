@@ -41,6 +41,7 @@ import static org.fcrepo.auth.webac.URIConstants.WEBAC_MODE_VALUE;
 import static org.fcrepo.auth.webac.URIConstants.WEBAC_NAMESPACE_VALUE;
 import static org.fcrepo.kernel.api.RequiredRdfContext.PROPERTIES;
 import static org.fcrepo.kernel.modeshape.identifiers.NodeResourceConverter.nodeConverter;
+import static org.fcrepo.kernel.modeshape.FedoraSessionImpl.getJcrSession;
 import static org.fcrepo.kernel.modeshape.utils.FedoraTypesUtils.isNonRdfSourceDescription;
 import static org.fcrepo.kernel.modeshape.utils.FedoraTypesUtils.getJcrNode;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -71,12 +72,14 @@ import javax.jcr.version.VersionHistory;
 
 import org.fcrepo.auth.roles.common.AccessRolesProvider;
 import org.fcrepo.http.commons.session.SessionFactory;
+import org.fcrepo.kernel.api.FedoraSession;
 import org.fcrepo.kernel.api.exception.MalformedRdfException;
 import org.fcrepo.kernel.api.exception.RepositoryRuntimeException;
 import org.fcrepo.kernel.api.identifiers.IdentifierConverter;
 import org.fcrepo.kernel.api.models.FedoraResource;
 import org.fcrepo.kernel.api.models.NonRdfSourceDescription;
 import org.fcrepo.kernel.api.services.NodeService;
+import org.fcrepo.kernel.modeshape.FedoraSessionImpl;
 import org.fcrepo.kernel.modeshape.rdf.impl.DefaultIdentifierTranslator;
 
 import org.modeshape.jcr.value.Path;
@@ -127,12 +130,12 @@ public class WebACRolesProvider implements AccessRolesProvider {
     @Override
     public Map<String, Collection<String>> findRolesForPath(final Path absPath, final Session session)
             throws RepositoryException {
-        return getAgentRoles(locateResource(absPath, session));
+        return getAgentRoles(locateResource(absPath, new FedoraSessionImpl(session)));
     }
 
-    private FedoraResource locateResource(final Path path, final Session session) {
+    private FedoraResource locateResource(final Path path, final FedoraSession session) {
         try {
-            if (session.nodeExists(path.toString()) || path.isRoot()) {
+            if (getJcrSession(session).nodeExists(path.toString()) || path.isRoot()) {
                 LOGGER.debug("findRolesForPath: {}", path.getString());
                 final FedoraResource resource = nodeService.find(session, path.toString());
 
@@ -156,14 +159,15 @@ public class WebACRolesProvider implements AccessRolesProvider {
      * @return the base versionable resource or the version if not found.
      */
     private FedoraResource getBaseVersion(final FedoraResource resource) {
-        final Session internalSession = sessionFactory.getInternalSession();
+        final FedoraSession internalSession = sessionFactory.getInternalSession();
 
         try {
             final VersionHistory base = ((Version) getJcrNode(resource)).getContainingHistory();
             if (base.hasProperty(JCR_VERSIONABLE_UUID_PROPERTY)) {
                 final String versionUuid = base.getProperty(JCR_VERSIONABLE_UUID_PROPERTY).getValue().getString();
                 LOGGER.debug("versionableUuid : {}", versionUuid);
-                return nodeService.find(internalSession, internalSession.getNodeByIdentifier(versionUuid).getPath());
+                return nodeService.find(internalSession,
+                        getJcrSession(internalSession).getNodeByIdentifier(versionUuid).getPath());
             }
         } catch (final ItemNotFoundException e) {
             LOGGER.error("Node with jcr:versionableUuid not found : {}", e.getMessage());
@@ -176,7 +180,7 @@ public class WebACRolesProvider implements AccessRolesProvider {
     @Override
     public Map<String, Collection<String>> getRoles(final Node node, final boolean effective) {
         try {
-            return getAgentRoles(nodeService.find(node.getSession(), node.getPath()));
+            return getAgentRoles(nodeService.find(new FedoraSessionImpl(node.getSession()), node.getPath()));
         } catch (final RepositoryException ex) {
             throw new RepositoryRuntimeException(ex);
         }
@@ -286,9 +290,9 @@ public class WebACRolesProvider implements AccessRolesProvider {
      *  Any out-of-domain URIs are silently ignored.
      */
     private List<String> dereferenceAgentClasses(final Collection<String> agentClasses) {
-        final Session internalSession = sessionFactory.getInternalSession();
+        final FedoraSession internalSession = sessionFactory.getInternalSession();
         final IdentifierConverter<Resource, FedoraResource> translator =
-                new DefaultIdentifierTranslator(internalSession);
+                new DefaultIdentifierTranslator(getJcrSession(internalSession));
 
         final List<String> members = agentClasses.stream().flatMap(agentClass -> {
             if (agentClass.startsWith(FEDORA_INTERNAL_PREFIX)) {
@@ -355,10 +359,10 @@ public class WebACRolesProvider implements AccessRolesProvider {
      */
     private List<WebACAuthorization> getAuthorizations(final String location) {
 
-        final Session internalSession = sessionFactory.getInternalSession();
+        final FedoraSession internalSession = sessionFactory.getInternalSession();
         final List<WebACAuthorization> authorizations = new ArrayList<>();
         final IdentifierConverter<Resource, FedoraResource> translator =
-                new DefaultIdentifierTranslator(internalSession);
+                new DefaultIdentifierTranslator(getJcrSession(internalSession));
 
         LOGGER.debug("Effective ACL: {}", location);
 
