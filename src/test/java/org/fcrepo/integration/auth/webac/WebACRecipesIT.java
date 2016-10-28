@@ -19,11 +19,11 @@ package org.fcrepo.integration.auth.webac;
 
 import static java.util.Arrays.stream;
 import static javax.ws.rs.core.Response.Status.CREATED;
+import static org.apache.jena.vocabulary.DC_11.title;
 import static org.fcrepo.auth.webac.URIConstants.WEBAC_ACCESS_CONTROL_VALUE;
 import static org.fcrepo.auth.webac.WebACRolesProvider.GROUP_AGENT_BASE_URI_PROPERTY;
 import static org.fcrepo.auth.webac.WebACRolesProvider.ROOT_AUTHORIZATION_PROPERTY;
 import static org.fcrepo.auth.webac.WebACRolesProvider.USER_AGENT_BASE_URI_PROPERTY;
-import static org.fcrepo.kernel.api.RdfLexicon.DC_NAMESPACE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -59,8 +59,6 @@ import org.slf4j.LoggerFactory;
 public class WebACRecipesIT extends AbstractResourceIT {
 
     private static final Logger logger = LoggerFactory.getLogger(WebACRecipesIT.class);
-
-    private static final String DC_TITLE = DC_NAMESPACE + "title";
 
     /**
      * Convenience method to create an ACL with 0 or more authorization resources in the respository.
@@ -213,7 +211,7 @@ public class WebACRecipesIT extends AbstractResourceIT {
 
         logger.debug("Anonymous cannot write " + testObj);
         final HttpPatch requestPatch = patchObjMethod(id);
-        requestPatch.setEntity(new StringEntity("INSERT { <> <" + DC_TITLE + "> \"Test title\" . } WHERE {}"));
+        requestPatch.setEntity(new StringEntity("INSERT { <> <" + title.getURI() + "> \"Test title\" . } WHERE {}"));
         requestPatch.setHeader("Content-type", "application/sparql-update");
         assertEquals(HttpStatus.SC_FORBIDDEN, getStatus(requestPatch));
 
@@ -221,7 +219,8 @@ public class WebACRecipesIT extends AbstractResourceIT {
         final HttpPatch requestPatch2 = patchObjMethod(id);
         setAuth(requestPatch2, "jones");
         requestPatch2.setHeader("some-header", "Editors");
-        requestPatch2.setEntity(new StringEntity("INSERT { <> <" + DC_TITLE + "> \"Different title\" . } WHERE {}"));
+        requestPatch2.setEntity(
+                new StringEntity("INSERT { <> <" + title.getURI() + "> \"Different title\" . } WHERE {}"));
         requestPatch2.setHeader("Content-type", "application/sparql-update");
         assertEquals(HttpStatus.SC_NO_CONTENT, getStatus(requestPatch2));
     }
@@ -282,13 +281,13 @@ public class WebACRecipesIT extends AbstractResourceIT {
         logger.debug("Anonymous can't write " + testObj);
         final HttpPatch requestPatch = patchObjMethod(id);
         requestPatch.setHeader("Content-type", "application/sparql-update");
-        requestPatch.setEntity(new StringEntity("INSERT { <> <" + DC_TITLE + "> \"Change title\" . } WHERE {}"));
+        requestPatch.setEntity(new StringEntity("INSERT { <> <" + title.getURI() + "> \"Change title\" . } WHERE {}"));
         assertEquals(HttpStatus.SC_FORBIDDEN, getStatus(requestPatch));
 
         logger.debug("Editors can write " + testObj);
         final HttpPatch requestPatch2 = patchObjMethod(id);
         requestPatch2.setHeader("Content-type", "application/sparql-update");
-        requestPatch2.setEntity(new StringEntity("INSERT { <> <" + DC_TITLE + "> \"New title\" . } WHERE {}"));
+        requestPatch2.setEntity(new StringEntity("INSERT { <> <" + title.getURI() + "> \"New title\" . } WHERE {}"));
         setAuth(requestPatch2, "jones");
         requestPatch2.setHeader("some-header", "Editors");
         assertEquals(HttpStatus.SC_NO_CONTENT, getStatus(requestPatch2));
@@ -330,7 +329,8 @@ public class WebACRecipesIT extends AbstractResourceIT {
         logger.debug("Smith can't write " + testObj);
         final HttpPatch requestPatch3 = patchObjMethod(id);
         requestPatch3.setHeader("Content-type", "application/sparql-update");
-        requestPatch3.setEntity(new StringEntity("INSERT { <> <" + DC_TITLE + "> \"Different title\" . } WHERE {}"));
+        requestPatch3.setEntity(
+                new StringEntity("INSERT { <> <" + title.getURI() + "> \"Different title\" . } WHERE {}"));
         setAuth(requestPatch3, "smith");
         assertEquals(HttpStatus.SC_FORBIDDEN, getStatus(requestPatch3));
     }
