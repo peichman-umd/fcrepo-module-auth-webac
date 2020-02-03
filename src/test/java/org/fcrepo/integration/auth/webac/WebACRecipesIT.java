@@ -141,8 +141,8 @@ public class WebACRecipesIT extends AbstractResourceIT {
         final HttpPatch request = patchObjMethod(protectedResource.replace(serverAddress, ""));
         setAuth(request, "fedoraAdmin");
         request.setHeader("Content-type", "application/sparql-update");
-        request.setEntity(new StringEntity(
-                "INSERT { <> <" + WEBAC_ACCESS_CONTROL_VALUE + "> <" + aclResource + "> . } WHERE {}"));
+        final String sparql = "INSERT { <> <" + WEBAC_ACCESS_CONTROL_VALUE + "> <" + aclResource + "> . } WHERE {}";
+        request.setEntity(new StringEntity(sparql));
         assertEquals(HttpStatus.SC_NO_CONTENT, getStatus(request));
     }
 
@@ -769,5 +769,14 @@ public class WebACRecipesIT extends AbstractResourceIT {
         assertEquals(HttpStatus.SC_NOT_FOUND, getStatus(getReq));
     }
 
-
+    @Test
+    public void testAccessToBinaryByClass() throws IOException {
+        final String binaryPath = "/rest/binary";
+        final String binary = ingestDatastream(binaryPath, "foo");
+        final String acl = ingestAcl("fedoraAdmin", "/acls/17/acl.ttl", "/acls/17/authorization.ttl");
+        linkToAcl(binary + "/fcr:metadata", acl);
+        final HttpGet getReq1 = getObjMethod(binaryPath);
+        setAuth(getReq1, "fedoraUser");
+        assertEquals(HttpStatus.SC_FORBIDDEN, getStatus(getReq1));
+    }
 }

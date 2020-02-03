@@ -192,24 +192,27 @@ public class WebACRolesProvider implements AccessRolesProvider {
     private Map<String, Collection<String>> getAgentRoles(final FedoraResource resource) {
         LOGGER.debug("Getting agent roles for: {}", resource.getPath());
 
+        // If the request is for fcr:metadata, get the described resource instead.
+        final FedoraResource describedResource = isNonRdfSourceDescription.test(getJcrNode(resource)) ?
+                ((NonRdfSourceDescription)nodeConverter.convert(getJcrNode(resource))).getDescribedResource() :
+                resource;
+
         // Get the effective ACL by searching the target node and any ancestors.
-        final Optional<ACLHandle> effectiveAcl = getEffectiveAcl(
-                isNonRdfSourceDescription.test(getJcrNode(resource)) ?
-                    ((NonRdfSourceDescription)nodeConverter.convert(getJcrNode(resource))).getDescribedResource() :
-                    resource);
+        final Optional<ACLHandle> effectiveAcl = getEffectiveAcl(describedResource);
 
         // Construct a list of acceptable acl:accessTo values for the target resource.
         final List<String> resourcePaths = new ArrayList<>();
-        resourcePaths.add(FEDORA_INTERNAL_PREFIX + resource.getPath());
+        resourcePaths.add(FEDORA_INTERNAL_PREFIX + describedResource.getPath());
 
         // Construct a list of acceptable acl:accessToClass values for the target resource.
-        final List<URI> rdfTypes = resource.getTypes();
+        final List<URI> rdfTypes = describedResource.getTypes();
+        LOGGER.debug("Types for {}: {}", describedResource.getPath(), rdfTypes);
 
         // Add the resource location and types of the ACL-bearing parent,
         // if present and if different than the target resource.
         effectiveAcl
             .map(aclHandle -> aclHandle.resource)
-            .filter(effectiveResource -> !effectiveResource.getPath().equals(resource.getPath()))
+            .filter(effectiveResource -> !effectiveResource.getPath().equals(describedResource.getPath()))
             .ifPresent(effectiveResource -> {
                 resourcePaths.add(FEDORA_INTERNAL_PREFIX + effectiveResource.getPath());
                 rdfTypes.addAll(effectiveResource.getTypes());
@@ -222,7 +225,7 @@ public class WebACRolesProvider implements AccessRolesProvider {
         // created to match any acl:accessTo values that are part of the getDefaultAuthorization.
         // This is not relevant if an effectiveAcl is present.
         if (!effectiveAcl.isPresent()) {
-            resourcePaths.addAll(getAllPathAncestors(resource.getPath()));
+            resourcePaths.addAll(getAllPathAncestors(describedResource.getPath()));
         }
 
         // Create a function to check acl:accessTo, scoped to the given resourcePaths
