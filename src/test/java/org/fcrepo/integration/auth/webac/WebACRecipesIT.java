@@ -25,6 +25,7 @@ import static org.fcrepo.auth.webac.WebACRolesProvider.GROUP_AGENT_BASE_URI_PROP
 import static org.fcrepo.auth.webac.WebACRolesProvider.ROOT_AUTHORIZATION_PROPERTY;
 import static org.fcrepo.auth.webac.WebACRolesProvider.USER_AGENT_BASE_URI_PROPERTY;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -35,8 +36,10 @@ import javax.ws.rs.core.Link;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.http.Header;
+import org.apache.http.HeaderElement;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
+import org.apache.http.NameValuePair;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPatch;
@@ -130,6 +133,55 @@ public class WebACRecipesIT extends AbstractResourceIT {
         }
     }
 
+    private HttpResponse ingestBinary() throws IOException {
+        final HttpPost ingestRequest = new HttpPost(serverAddress + "/rest");
+        ingestRequest.setHeader("Content-Type", "text/plain");
+        ingestRequest.setEntity(new StringEntity("dummy content"));
+        setAuth(ingestRequest, "fedoraAdmin");
+        final CloseableHttpResponse response = execute(ingestRequest);
+        assertEquals(HttpStatus.SC_CREATED, getStatus(response));
+        return response;
+    }
+
+    /**
+     * Finds the first rel="describedby" Link header in the response, and returns the URI.
+     *
+     * @param response HTTP response to scan for Link headers
+     * @return a URI, or null if none can be found
+     */
+    private String getDescribedBy(final HttpResponse response) {
+        for (final Header linkHeader : response.getHeaders("Link")) {
+            for (HeaderElement element : linkHeader.getElements()) {
+                final NameValuePair rel = element.getParameterByName("rel");
+                if (rel != null && rel.getValue().equals("describedby")) {
+                    return element.getName().replaceAll("[<>]", "");
+                }
+            }
+        }
+        return null;
+    }
+
+    private HttpResponse ingestBinaryWithRDFTypes(final String[] rdfTypes)
+            throws IOException {
+        final HttpResponse ingestBinaryResponse = ingestBinary();
+        // create a PATCH request to add RDF types to fcr:metadata
+        final StringBuilder sparqlUpdate = new StringBuilder();
+        sparqlUpdate.append("INSERT DATA {\n");
+        for (final String rdfType : rdfTypes) {
+            sparqlUpdate.append("<> a <").append(rdfType).append("> .\n");
+        }
+        sparqlUpdate.append("}\n");
+        final HttpPatch sparqlRequest = new HttpPatch(getDescribedBy(ingestBinaryResponse));
+        sparqlRequest.setHeader("Content-Type", "application/sparql-update");
+        sparqlRequest.setEntity(new StringEntity(sparqlUpdate.toString()));
+        setAuth(sparqlRequest, "fedoraAdmin");
+        final CloseableHttpResponse response = execute(sparqlRequest);
+        assertEquals(HttpStatus.SC_NO_CONTENT, getStatus(response));
+
+        // return the original binary creation response
+        return ingestBinaryResponse;
+    }
+
     /**
      * Convenience method to link a Resource to a WebACL resource
      *
@@ -141,8 +193,8 @@ public class WebACRecipesIT extends AbstractResourceIT {
         final HttpPatch request = patchObjMethod(protectedResource.replace(serverAddress, ""));
         setAuth(request, "fedoraAdmin");
         request.setHeader("Content-type", "application/sparql-update");
-        request.setEntity(new StringEntity(
-                "INSERT { <> <" + WEBAC_ACCESS_CONTROL_VALUE + "> <" + aclResource + "> . } WHERE {}"));
+        final String sparql = "INSERT { <> <" + WEBAC_ACCESS_CONTROL_VALUE + "> <" + aclResource + "> . } WHERE {}";
+        request.setEntity(new StringEntity(sparql));
         assertEquals(HttpStatus.SC_NO_CONTENT, getStatus(request));
     }
 
@@ -769,5 +821,34 @@ public class WebACRecipesIT extends AbstractResourceIT {
         assertEquals(HttpStatus.SC_NOT_FOUND, getStatus(getReq));
     }
 
+    @Test
+    public void testAccessToBinaryByClassForbidden() throws IOException {
+        final String acl = ingestAcl("fedoraAdmin", "/acls/17/acl.ttl", "/acls/17/authorization.ttl");
 
+        // a binary that should be restricted, since it doesn't have the right RDF type
+        final HttpResponse ingestBinaryResponse = ingestBinary();
+        final String binaryURI = getLocation(ingestBinaryResponse);
+        final String metadataURI = getDescribedBy(ingestBinaryResponse);
+        assertNotNull(metadataURI);
+        linkToAcl(metadataURI, acl);
+        final HttpGet getReq1 = new HttpGet(binaryURI);
+        setAuth(getReq1, "fedoraUser");
+        assertEquals(HttpStatus.SC_FORBIDDEN, getStatus(getReq1));
+    }
+
+    @Test
+    public void testAccessToBinaryByClassAllowed() throws IOException {
+        final String acl = ingestAcl("fedoraAdmin", "/acls/17/acl.ttl", "/acls/17/authorization.ttl");
+
+        // a binary that should not be restricted, since it has the right RDF type
+        final HttpResponse ingestTypedBinaryResponse = ingestBinaryWithRDFTypes(
+                new String[]{"http://xmlns.com/foaf/0.1/Document"});
+        final String typedBinaryURI = getLocation(ingestTypedBinaryResponse);
+        final String typedMetadataURI = getDescribedBy(ingestTypedBinaryResponse);
+        assertNotNull(typedMetadataURI);
+        linkToAcl(typedMetadataURI, acl);
+        final HttpGet getReq2 = new HttpGet(typedBinaryURI);
+        setAuth(getReq2, "fedoraUser");
+        assertEquals(HttpStatus.SC_OK, getStatus(getReq2));
+    }
 }
